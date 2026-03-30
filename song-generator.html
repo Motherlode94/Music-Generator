@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Song Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: radial-gradient(ellipse at 20% 0%, #1a0533 0%, #0a0a12 50%), radial-gradient(ellipse at 80% 100%, #0f1a2e 0%, transparent 60%);
+      min-height: 100vh;
+      font-family: 'Syne', sans-serif;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+
+    /* Floating notes */
+    .floating-note {
+      position: fixed;
+      pointer-events: none;
+      font-size: 1.5rem;
+      color: #c084fc;
+      opacity: 0;
+      animation: float linear infinite;
+      z-index: 0;
+    }
+
+    @keyframes float {
+      0%   { transform: translateY(110vh) rotate(0deg); opacity: 0; }
+      10%  { opacity: 0.12; }
+      90%  { opacity: 0.12; }
+      100% { transform: translateY(-10vh) rotate(25deg); opacity: 0; }
+    }
+
+    @keyframes wave {
+      0%   { height: 5px; }
+      100% { height: 26px; }
+    }
+
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: -200% 0; }
+      100% { background-position:  200% 0; }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Layout */
+    .container {
+      max-width: 660px;
+      margin: 0 auto;
+      padding: 48px 20px 60px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(168,85,247,0.12);
+      border: 1px solid rgba(168,85,247,0.25);
+      border-radius: 100px;
+      padding: 6px 18px;
+      margin-bottom: 20px;
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      color: #c084fc;
+      text-transform: uppercase;
+    }
+
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 28px;
+    }
+
+    .waveform span {
+      display: block;
+      width: 3px;
+      background: linear-gradient(to top, #a855f7, #ec4899);
+      border-radius: 2px;
+      height: 5px;
+      transition: height 0.3s ease;
+    }
+
+    .waveform.active span {
+      animation: wave 0.5s ease-in-out infinite alternate;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 6vw, 3rem);
+      font-weight: 800;
+      background: linear-gradient(135deg, #e9d5ff 0%, #ec4899 50%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.1;
+      margin-bottom: 12px;
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.38);
+      font-size: 0.95rem;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      margin-bottom: 36px;
+    }
+
+    /* Card */
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 20px;
+      padding: 28px 24px;
+      margin-bottom: 24px;
+      backdrop-filter: blur(20px);
+    }
+
+    .field-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: #a78bfa;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 10px;
+    }
+
+    .field { margin-bottom: 22px; }
+
+    /* Chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .chip {
+      cursor: pointer;
+      padding: 6px 14px;
+      border-radius: 100px;
+      border: 1px solid rgba(255,255,255,0.1);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+      background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.55);
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .chip:hover    { border-color: rgba(168,85,247,0.5); color: #d8b4fe; background: rgba(168,85,247,0.08); }
+    .chip.selected { background: rgba(168,85,247,0.2); border-color: #a855f7; color: #e9d5ff; }
+
+    /* Text input */
+    .theme-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 11px 14px;
+      color: #e2e8f0;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .theme-input:focus       { border-color: #a855f7; }
+    .theme-input::placeholder { color: rgba(255,255,255,0.22); }
+
+    /* Generate button */
+    .gen-btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: linear-gradient(135deg, #7c3aed, #db2777);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .gen-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(124,58,237,0.4); }
+    .gen-btn:disabled {
+      opacity: 0.8;
+      cursor: not-allowed;
+      background: linear-gradient(270deg, #7c3aed, #db2777, #7c3aed);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s linear infinite;
+    }
+
+    /* Error */
+    .error-box {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: #fca5a5;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      margin-bottom: 24px;
+      display: none;
+    }
+
+    /* Song result */
+    #song-result { display: none; animation: fadeSlide 0.5s ease both; }
+
+    .song-meta {
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      color: #a78bfa;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .song-title {
+      font-size: clamp(1.4rem, 4vw, 2rem);
+      font-weight: 800;
+      background: linear-gradient(90deg, #e9d5ff, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 20px;
+    }
+
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .copy-btn {
+      cursor: pointer;
+      background: rgba(168,85,247,0.15);
+      border: 1px solid rgba(168,85,247,0.3);
+      border-radius: 10px;
+      padding: 8px 14px;
+      color: #c084fc;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .copy-btn:hover { background: rgba(168,85,247,0.25); }
+
+    /* Section cards */
+    .section-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 12px;
+      animation: fadeSlide 0.4s ease both;
+      transition: border-color 0.2s;
+    }
+    .section-card:hover { border-color: rgba(168,85,247,0.2); }
+
+    .section-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-label::before {
+      content: '';
+      display: inline-block;
+      width: 20px;
+      height: 2px;
+      border-radius: 2px;
+      background: currentColor;
+      opacity: 0.6;
+    }
+
+    .section-lyrics {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      font-size: 0.92rem;
+      line-height: 1.85;
+      color: rgba(255,255,255,0.72);
+      white-space: pre-line;
+    }
+
+    /* Regen button */
+    .regen-btn {
+      width: 100%;
+      background: transparent;
+      border: 1px solid rgba(168,85,247,0.3);
+      border-radius: 12px;
+      padding: 13px;
+      color: #c084fc;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+    .regen-btn:hover { background: rgba(168,85,247,0.1); border-color: #a855f7; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar       { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- Floating notes -->
+<div id="notes-container"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <div style="text-align:center">
+    <div class="badge">
+      <div class="waveform" id="waveform-left">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </div>
+      AI Song Generator
+      <div class="waveform" id="waveform-right">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+    <h1>Compose ta<br>chanson avec l'IA</h1>
+    <p class="subtitle">Choisis un style, une humeur, un thème — et laisse l'IA écrire pour toi.</p>
+  </div>
+
+  <!-- Controls -->
+  <div class="card">
+
+    <div class="field">
+      <span class="field-label">Genre musical</span>
+      <div class="chips" id="genre-chips"></div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Ambiance / Humeur</span>
+      <div class="chips" id="mood-chips"></div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Langue</span>
+      <div class="chips" id="lang-chips"></div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Thème (optionnel)</span>
+      <input class="theme-input" id="theme-input" type="text"
+        placeholder="Ex : une lettre jamais envoyée, la ville la nuit, un amour de jeunesse..." />
+    </div>
+
+    <button class="gen-btn" id="gen-btn" onclick="generateSong()">✦ Générer la chanson</button>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="error-box"></div>
+
+  <!-- Song result -->
+  <div id="song-result">
+    <div class="title-row">
+      <div>
+        <div class="song-meta" id="song-meta"></div>
+        <div class="song-title" id="song-title"></div>
+      </div>
+      <button class="copy-btn" id="copy-btn" onclick="copySong()">⎘ Copier</button>
+    </div>
+    <div id="sections-container"></div>
+    <button class="regen-btn" onclick="generateSong()">↺ Regénérer une nouvelle version</button>
+  </div>
+
+</div>
+
+<script>
+  // ── Data ──────────────────────────────────────────────
+  const GENRES = ["Pop","Rock","Hip-Hop","Jazz","R&B","Électro","Folk","Metal","Reggae","Chanson française"];
+  const MOODS  = ["Mélancolique","Euphorique","Romantique","Énergique","Nostalgique","Rebelle","Mystérieux","Doux"];
+  const LANGS  = ["Français","English","Español","Italiano"];
+  const NOTES  = ["♩","♪","♫","♬","𝄞","𝄢"];
+
+  let selected = { genre: "Pop", mood: "Mélancolique", lang: "Français" };
+  let currentRaw = "";
+
+  // ── Build chip groups ─────────────────────────────────
+  function buildChips(containerId, items, key) {
+    const el = document.getElementById(containerId);
+    items.forEach(item => {
+      const btn = document.createElement("button");
+      btn.className = "chip" + (item === selected[key] ? " selected" : "");
+      btn.textContent = item;
+      btn.onclick = () => {
+        selected[key] = item;
+        el.querySelectorAll(".chip").forEach(c => c.classList.remove("selected"));
+        btn.classList.add("selected");
+      };
+      el.appendChild(btn);
+    });
+  }
+
+  buildChips("genre-chips", GENRES, "genre");
+  buildChips("mood-chips",  MOODS,  "mood");
+  buildChips("lang-chips",  LANGS,  "lang");
+
+  // ── Floating notes ────────────────────────────────────
+  const notesEl = document.getElementById("notes-container");
+  NOTES.forEach((n, i) => {
+    const el = document.createElement("div");
+    el.className = "floating-note";
+    el.textContent = n;
+    el.style.left = `${8 + i * 15}%`;
+    el.style.fontSize = `${1.2 + (i % 3) * 0.5}rem`;
+    el.style.animationDuration = `${10 + i * 2}s`;
+    el.style.animationDelay = `${i * 1.5}s`;
+    notesEl.appendChild(el);
+  });
+
+  // ── Waveform toggle ───────────────────────────────────
+  function setWave(active) {
+    ["waveform-left","waveform-right"].forEach(id => {
+      document.getElementById(id).classList.toggle("active", active);
+      const spans = document.getElementById(id).querySelectorAll("span");
+      spans.forEach((s, i) => { s.style.animationDelay = `${i * 0.07}s`; });
+    });
+  }
+
+  // ── Section color ─────────────────────────────────────
+  function sectionColor(label) {
+    const u = label.toUpperCase();
+    if (u.includes("COUPLET"))  return "#818cf8";
+    if (u.includes("REFRAIN"))  return "#ec4899";
+    if (u.includes("PONT") || u.includes("BRIDGE")) return "#34d399";
+    return "#a855f7";
+  }
+
+  // ── Parse song text ───────────────────────────────────
+  function parseSong(text) {
+    const titleMatch = text.match(/TITRE\s*:\s*(.+)/i);
+    const title = titleMatch ? titleMatch[1].trim() : "Ma Chanson";
+    const body  = text.replace(/TITRE\s*:.+/i, "").trim();
+
+    const sections = [];
+    const rx = /\[(.*?)\]\n([\s\S]*?)(?=\[|$)/g;
+    let m;
+    while ((m = rx.exec(body)) !== null) {
+      const lbl    = m[1].trim();
+      const lyrics = m[2].trim();
+      if (lyrics) sections.push({ lbl, lyrics });
+    }
+    return { title, sections };
+  }
+
+  // ── Render song ───────────────────────────────────────
+  function renderSong(text) {
+    currentRaw = text;
+    const { title, sections } = parseSong(text);
+
+    document.getElementById("song-meta").textContent =
+      `♪ ${selected.genre} · ${selected.mood} · ${selected.lang}`;
+    document.getElementById("song-title").textContent = title;
+
+    const container = document.getElementById("sections-container");
+    container.innerHTML = "";
+
+    sections.forEach((sec, i) => {
+      const color = sectionColor(sec.lbl);
+      const card  = document.createElement("div");
+      card.className = "section-card";
+      card.style.animationDelay = `${i * 0.08}s`;
+      card.innerHTML = `
+        <div class="section-label" style="color:${color}">${sec.lbl}</div>
+        <div class="section-lyrics">${escapeHtml(sec.lyrics)}</div>
+      `;
+      container.appendChild(card);
+    });
+
+    document.getElementById("song-result").style.display = "block";
+    document.getElementById("song-result").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  // ── Copy ──────────────────────────────────────────────
+  function copySong() {
+    navigator.clipboard.writeText(currentRaw).then(() => {
+      const btn = document.getElementById("copy-btn");
+      btn.textContent = "✓ Copié !";
+      setTimeout(() => btn.textContent = "⎘ Copier", 2000);
+    });
+  }
+
+  // ── Generate ──────────────────────────────────────────
+  async function generateSong() {
+    const btn   = document.getElementById("gen-btn");
+    const theme = document.getElementById("theme-input").value.trim();
+    const errEl = document.getElementById("error-box");
+
+    btn.disabled   = true;
+    btn.textContent = "✦ Composition en cours...";
+    errEl.style.display = "none";
+    setWave(true);
+
+    const prompt = `Tu es un parolier professionnel. Génère une chanson complète en ${selected.lang} dans le style ${selected.genre}, avec une ambiance ${selected.mood}${theme ? ` sur le thème : "${theme}"` : ""}.
+
+La chanson doit comporter :
+- Un titre accrocheur
+- Un couplet 1
+- Un refrain (qui se répète)
+- Un couplet 2
+- Le refrain
+- Un pont (bridge)
+- Le refrain final
+
+Formate ta réponse EXACTEMENT ainsi :
+TITRE: [titre de la chanson]
+
+[COUPLET 1]
+[paroles...]
+
+[REFRAIN]
+[paroles...]
+
+[COUPLET 2]
+[paroles...]
+
+[REFRAIN]
+[paroles...]
+
+[PONT]
+[paroles...]
+
+[REFRAIN FINAL]
+[paroles...]`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      const data = await res.json();
+      const text = (data.content || []).find(b => b.type === "text")?.text || "";
+
+      if (!text) throw new Error("Réponse vide de l'API.");
+      renderSong(text);
+
+    } catch (e) {
+      errEl.textContent = "⚠ Erreur : " + e.message;
+      errEl.style.display = "block";
+    }
+
+    btn.disabled    = false;
+    btn.textContent = "✦ Générer la chanson";
+    setWave(false);
+  }
+
+  // Enter key on theme input
+  document.getElementById("theme-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") generateSong();
+  });
+</script>
+</body>
+</html>
