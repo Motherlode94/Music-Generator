@@ -1,0 +1,25 @@
+name: Music generator smoke checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          h=Path('song-generator.html')
+          j=Path('song_generator.jsx')
+          assert h.exists() and j.exists(),'Generator sources missing'
+          text=h.read_text(encoding='utf-8')
+          assert '<html' in text.lower() and '</html>' in text.lower()
+          assert j.stat().st_size>100
+          print('Music generator source smoke checks passed')
+          PY
